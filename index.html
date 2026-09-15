@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Roo Gun">
+<meta name="theme-color" content="#1a0b3d">
+<title>Roo Gun: The Data Defenders</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<style>
+  /* Bangers, self-hosted so the game looks right offline. Licence: assets/fonts/OFL.txt */
+  @font-face {
+    font-family: 'Bangers';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('assets/fonts/bangers.woff2') format('woff2');
+  }
+  html, body { margin: 0; height: 100%; background: #1a0b3d; overflow: hidden; overscroll-behavior: none; }
+  body {
+    position: fixed; inset: 0; touch-action: none;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  }
+  #game { display: block; width: 100%; height: 100%; touch-action: none; }
+  #safe-area {
+    position: fixed; visibility: hidden; pointer-events: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  #boot-error {
+    position: fixed; left: 12px; right: 12px; bottom: 12px; padding: 12px;
+    background: #ff2e63; color: #fff; font: 14px/1.4 -apple-system, sans-serif;
+    border: 3px solid #000; border-radius: 10px; white-space: pre-wrap; z-index: 10;
+  }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="safe-area"></div>
+<script>
+  // Errors are shown on screen so problems are visible on a phone with no dev tools.
+  function showBootError(message) {
+    var el = document.getElementById('boot-error');
+    if (!el) { el = document.createElement('div'); el.id = 'boot-error'; document.body.appendChild(el); }
+    el.textContent = message;
+  }
+  if (location.protocol === 'file:') {
+    showBootError('Roo Gun has to be served over http. In Terminal run ./serve.sh and open the address it prints.');
+  }
+  window.addEventListener('error', function (e) { showBootError('Error: ' + e.message); });
+  window.addEventListener('unhandledrejection', function (e) { showBootError('Error: ' + (e.reason && e.reason.message || e.reason)); });
+
+  // Offline support. Browsers only allow this over https (or localhost), and
+  // debug runs skip it so screenshots never come from a stale cache.
+  var secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  var debugRun = /[?&](debug|sim|bot|wave|stare|then|screen|level)=/.test(location.search);
+  if ('serviceWorker' in navigator && secure && !debugRun) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').then(function () {
+        document.documentElement.dataset.sw = 'registered';
+      }).catch(function (err) {
+        console.warn('Offline support unavailable', err);
+      });
+    });
+  }
+</script>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
