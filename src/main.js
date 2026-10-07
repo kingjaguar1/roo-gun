@@ -20,6 +20,7 @@ const [hims] = await Promise.all([loadHimLibrary('assets/him/manifest.json'), lo
 const events = new Events();
 const audio = new GameAudio();
 connectAudio(events, audio);
+audio.listenForTaps();
 
 const menu = new MenuScreen({ view, hims });
 const gameOver = new GameOverScreen({ view, hims });
@@ -53,7 +54,6 @@ events.on('gameOver', (stats) => showResults(stats, 'gameOver'));
 events.on('victory', (stats) => showResults(stats, 'victory'));
 
 attachInput(canvas, {
-  onGesture: () => audio.unlock(),
   onPress(x, y) {
     audio.unlock();
     if (muteButton.contains(x, y)) {

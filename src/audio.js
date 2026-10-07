@@ -19,8 +19,11 @@ export class GameAudio {
     this.noise = null;
     this.muted = readMuted();
     this.lastPlayed = new Map();
+    this.started = false;
   }
 
+  // Safe to call on every tap: builds the graph once, then keeps nudging the
+  // context awake. Phones need the nudging; a desktop is running after one call.
   unlock() {
     if (!this.ctx) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -34,8 +37,45 @@ export class GameAudio {
       this.master.connect(limiter);
       limiter.connect(this.ctx.destination);
       this.noise = this.makeNoise(2);
+      this.watchForSleep();
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    this.wake();
+    // iOS hands over the speaker only once a source has actually played inside a
+    // gesture, so push silence through until the context reports it is running.
+    if (!this.started) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+      src.connect(this.ctx.destination);
+      src.start(0);
+      this.started = this.ctx.state === 'running';
+    }
+  }
+
+  // resume() is async on phones, and iOS parks the context in a non-standard
+  // 'interrupted' state after a call, a lock screen or a switch to another app.
+  wake() {
+    if (!this.ctx || this.ctx.state === 'running') return Promise.resolve(true);
+    return Promise.resolve(this.ctx.resume?.())
+      .then(() => this.ctx.state === 'running', () => false);
+  }
+
+  // Coming back from the background leaves the context asleep with no tap to
+  // ride on, so wake it whenever the page is in front again.
+  watchForSleep() {
+    const wake = () => this.wake();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
+    window.addEventListener('pageshow', wake);
+    window.addEventListener('focus', wake);
+    this.ctx.addEventListener?.('statechange', () => { if (this.ctx.state !== 'running') wake(); });
+  }
+
+  // Unlocking on pointerdown alone isn't enough on every phone: older iOS only
+  // counts touchend/click, and taps can land outside the canvas.
+  listenForTaps(target = document) {
+    const unlock = () => this.unlock();
+    for (const type of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) {
+      target.addEventListener(type, unlock, { passive: true, capture: true });
+    }
   }
 
   toggleMute() {
@@ -45,8 +85,13 @@ export class GameAudio {
     return this.muted;
   }
 
-  play(name, opts = {}) {
-    if (!this.ctx || this.muted || this.ctx.state !== 'running') return;
+  play(name, opts = {}, retry = true) {
+    if (!this.ctx || this.muted) return;
+    if (this.ctx.state !== 'running') {
+      // Don't lose the sound that woke the context (the first tap's click).
+      if (retry) this.wake().then((running) => { if (running) this.play(name, opts, false); });
+      return;
+    }
     const now = this.ctx.currentTime;
     const gap = THROTTLE[name] ?? 0.02;
     if (now - (this.lastPlayed.get(name) ?? -1) < gap) return;
