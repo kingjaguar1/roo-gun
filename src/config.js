@@ -56,6 +56,9 @@ export const CONFIG = {
     minInterval: 0.32,
     startSpeedMul: 1.25,   // wave 1 is already brisk, not a warm-up
     speedPerWave: 0.07,
+    // The opening waves get a lift that fades out by wave 4, so the game
+    // starts at pace instead of climbing into it.
+    earlyBoost: { waves: 3, speed: 0.18 },
     maxSpeedMul: 2.1,
     maxAlive: 18,
     burstFromWave: 6,      // later waves sometimes spawn several at once

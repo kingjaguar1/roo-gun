@@ -16,6 +16,14 @@ export function introducedVariant(n) {
   return entry ? entry[0] : null;
 }
 
+// Extra speed for the opening waves, tapering to nothing by the wave after
+// them, so wave 3 runs straight into wave 4 with no dip.
+export function earlyBoost(n) {
+  const b = CONFIG.waves.earlyBoost;
+  if (!b || n > b.waves) return 0;
+  return b.speed * (1 - (n - 1) / b.waves);
+}
+
 // 1 on a normal wave; below 1 for the waves just after a boss, easing back
 // up to full by the end of the breather.
 export function reliefFactor(n) {
@@ -86,7 +94,7 @@ export function buildWave(n, rng = Math.random, { lastPersona = null } = {}) {
     intro,
     spawns,
     // Speed eases off too, but far less than the head count.
-    speedMul: Math.min(W.maxSpeedMul, W.startSpeedMul + (n - 1) * W.speedPerWave)
+    speedMul: Math.min(W.maxSpeedMul, W.startSpeedMul + (n - 1) * W.speedPerWave + earlyBoost(n))
       * (1 - (1 - relief) * (W.relief?.speedShare ?? 0)),
     bossHpMul: boss ? 1 + (bossAppearance - 1) * W.bossHpPerAppearance : 1,
   };

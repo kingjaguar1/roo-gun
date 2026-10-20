@@ -118,6 +118,42 @@ export class MenuScreen {
     ctx.restore();
   }
 
+  // Nobody reads a manual, so the two things that matter go on the title
+  // screen: where the data is, and what tapping does.
+  drawHowTo(ctx, y, appear) {
+    if (appear <= 0.01) return;
+    const { w, scale: s } = this.view;
+    const lines = [
+      ['💾', 'YOUR DATA IS UP IN THE TOP CORNER'],
+      ['👆', `TAP EVERY ${this.hims.name.toUpperCase()} BEFORE HE REACHES IT`],
+    ];
+    const pad = 14 * s;
+    const lineH = 30 * s;
+    const cardW = Math.min(w * 0.9, 340 * s);
+    const cardH = lines.length * lineH + pad * 2;
+
+    ctx.save();
+    ctx.translate(w / 2, y + cardH / 2);
+    ctx.scale(1, Math.max(0.01, appear));
+    roundRect(ctx, -cardW / 2, -cardH / 2, cardW, cardH, 16 * s);
+    ctx.fillStyle = 'rgba(11, 6, 32, 0.62)';
+    ctx.fill();
+    ctx.lineWidth = 3 * s;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.stroke();
+
+    const iconX = -cardW / 2 + pad + 11 * s;
+    lines.forEach(([icon, text], i) => {
+      const ly = -cardH / 2 + pad + lineH * (i + 0.5);
+      emoji(ctx, icon, iconX, ly, 21 * s);
+      comicText(ctx, text, iconX + 20 * s, ly, 15 * s, {
+        fill: '#fff', align: 'left', strokeWidth: 4 * s, shadow: false,
+        maxWidth: cardW - pad * 2 - 34 * s,
+      });
+    });
+    ctx.restore();
+  }
+
   draw(ctx, records, level = null) {
     const view = this.view;
     const { w, h, scale: s, safe } = view;
@@ -170,6 +206,8 @@ export class MenuScreen {
     comicText(ctx, 'PROTECT THE DATA. STOP HIM.', w / 2, ribbonY + 48 * s, 19 * s, {
       fill: '#fff', strokeWidth: 5 * s, maxWidth: w * 0.9,
     });
+
+    this.drawHowTo(ctx, ribbonY + 86 * s, easeOutBack(clamp((this.time - 0.55) / 0.45, 0, 1)));
 
     this.playButton.draw(ctx, s, this.time, { pulse: true, appear: easeOutBack(clamp((this.time - 0.4) / 0.4, 0, 1)) });
 
