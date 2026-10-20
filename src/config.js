@@ -59,6 +59,9 @@ export const CONFIG = {
     unlocks: { fast: 2, big: 4, sneaky: 6 },
     bossFirstWave: 8,
     bossEvery: 4,
+    // Beating a boss earns a breather: the next few waves are lighter and
+    // build back up, so waves 9-11 aren't harder than the boss you just beat.
+    relief: { waves: 3, from: 0.6, speedShare: 0.4 },
     bossHpPerAppearance: 0.35,
   },
 };

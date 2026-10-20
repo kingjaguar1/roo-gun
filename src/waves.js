@@ -16,6 +16,16 @@ export function introducedVariant(n) {
   return entry ? entry[0] : null;
 }
 
+// 1 on a normal wave; below 1 for the waves just after a boss, easing back
+// up to full by the end of the breather.
+export function reliefFactor(n) {
+  const W = CONFIG.waves;
+  if (!W.relief || n <= W.bossFirstWave) return 1;
+  const since = (n - W.bossFirstWave) % W.bossEvery;
+  if (since === 0 || since > W.relief.waves) return 1;
+  return W.relief.from + (1 - W.relief.from) * ((since - 1) / W.relief.waves);
+}
+
 export function variantWeights(n) {
   const u = CONFIG.waves.unlocks;
   return {
@@ -37,12 +47,14 @@ function pickWeighted(weights, rng) {
   return entries[entries.length - 1][0];
 }
 
-export function buildWave(n, rng = Math.random) {
+export function buildWave(n, rng = Math.random, { lastPersona = null } = {}) {
   const W = CONFIG.waves;
   const boss = isBossWave(n);
   const intro = introducedVariant(n);
+  const relief = reliefFactor(n);
   let count = Math.min(W.maxCount, Math.round(W.baseCount + (n - 1) * W.countPerWave));
   if (boss) count = Math.round(count * 0.6);
+  if (relief < 1) count = Math.max(3, Math.round(count * relief));
 
   const weights = variantWeights(n);
   const rest = [];
@@ -65,7 +77,7 @@ export function buildWave(n, rng = Math.random) {
   }
 
   const bossAppearance = boss ? 1 + (n - W.bossFirstWave) / W.bossEvery : 0;
-  const persona = boss ? (CONFIG.boss.forcePersona ?? bossPersona(bossAppearance, rng)) : null;
+  const persona = boss ? (CONFIG.boss.forcePersona ?? bossPersona(bossAppearance, rng, lastPersona)) : null;
   return {
     number: n,
     boss,
@@ -73,7 +85,9 @@ export function buildWave(n, rng = Math.random) {
     bossAppearance,
     intro,
     spawns,
-    speedMul: Math.min(W.maxSpeedMul, W.startSpeedMul + (n - 1) * W.speedPerWave),
+    // Speed eases off too, but far less than the head count.
+    speedMul: Math.min(W.maxSpeedMul, W.startSpeedMul + (n - 1) * W.speedPerWave)
+      * (1 - (1 - relief) * (W.relief?.speedShare ?? 0)),
     bossHpMul: boss ? 1 + (bossAppearance - 1) * W.bossHpPerAppearance : 1,
   };
 }
@@ -88,11 +102,13 @@ export class WaveManager {
     this.timer = 0;
     this.clock = 0;
     this.queue = [];
+    this.lastPersona = null;
   }
 
   next() {
     this.number++;
-    this.wave = buildWave(this.number, this.rng);
+    this.wave = buildWave(this.number, this.rng, { lastPersona: this.lastPersona });
+    if (this.wave.persona) this.lastPersona = this.wave.persona;
     this.queue = this.wave.spawns.slice();
     this.state = 'banner';
     this.timer = CONFIG.waves.bannerTime;

@@ -63,13 +63,16 @@ export const BOSS_PERSONAS = {
   },
 };
 
-// Which Ruben turns up for appearance n. The first two are fixed so the
-// reveal lands before the spectacle; after that it's pot luck.
-export function bossPersona(appearance, rng = Math.random) {
+export const BOSS_ROTATION = ['showman', 'evil', 'silly'];
+
+// Which Ruben turns up for appearance n. The first is always the unmasking,
+// because that trick only lands once. After that it's random, except that he
+// never turns up as the same Ruben twice running - so a player who reaches a
+// second and third boss sees a different one each time.
+export function bossPersona(appearance, rng = Math.random, last = null) {
   if (appearance <= 1) return 'classic';
-  if (appearance === 2) return 'showman';
-  const pool = ['showman', 'evil', 'silly'];
-  return pool[Math.floor(rng() * pool.length)];
+  const pool = BOSS_ROTATION.filter((key) => key !== last);
+  return pool[Math.floor(rng() * pool.length)] ?? BOSS_ROTATION[0];
 }
 
 // The boss variant wearing one persona: same HIM, different everything else.
