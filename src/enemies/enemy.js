@@ -8,6 +8,7 @@ export class Enemy {
   constructor({ variant, x, y, sprite = null, revealSprite = null, scale = 1, speedMul = 1, hpMul = 1, rng = Math.random }) {
     this.id = nextId++;
     this.variant = variant;
+    this.persona = variant.persona ?? null;
     this.sprite = sprite;
     this.revealSprite = revealSprite; // Boss Ruben's real photo, swapped in mid-entrance
     this.revealed = false;
@@ -26,6 +27,8 @@ export class Enemy {
     this.dirX = 0;
     this.dirY = 0;
     this.alpha = 1;
+    this.spin = 0;      // parkour flips
+    this.legPhase = 0;  // leg animation
     this.hittable = true;
     this.hitFlash = 0;
     this.squash = 0;

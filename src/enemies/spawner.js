@@ -1,4 +1,4 @@
-import { VARIANTS } from './variants.js';
+import { VARIANTS, withPersona } from './variants.js';
 import { Enemy } from './enemy.js';
 
 // Where a new HIM appears: just off the left, bottom or top-left edges,
@@ -18,9 +18,9 @@ export class Spawner {
     this.rng = rng;
   }
 
-  create(key, { view, speedMul = 1, hpMul = 1 }) {
-    const variant = VARIANTS[key];
-    if (!variant) throw new Error(`Unknown HIM variant: ${key}`);
+  create(key, { view, speedMul = 1, hpMul = 1, persona = null }) {
+    const variant = withPersona(VARIANTS[key], persona);
+    if (!VARIANTS[key]) throw new Error(`Unknown HIM variant: ${key}`);
     const size = variant.size * view.scale;
     const { x, y } = spawnPoint(view, size, this.rng, variant);
     return new Enemy({
@@ -28,8 +28,8 @@ export class Spawner {
       sprite: this.hims.random(this.rng),
       revealSprite: variant.boss ? this.hims.bossPhoto?.(this.rng) ?? null : null,
       scale: view.scale,
-      speedMul,
-      hpMul,
+      speedMul: speedMul * (variant.persona?.speedMul ?? 1),
+      hpMul: hpMul * (variant.persona?.hpMul ?? 1),
       rng: this.rng,
     });
   }

@@ -1,4 +1,5 @@
 import { CONFIG } from './config.js';
+import { bossPersona } from './enemies/variants.js';
 
 // Wave N's line-up is a pure function of N (plus randomness), so the
 // difficulty curve is easy to test and tune from config.js.
@@ -64,12 +65,15 @@ export function buildWave(n, rng = Math.random) {
   }
 
   const bossAppearance = boss ? 1 + (n - W.bossFirstWave) / W.bossEvery : 0;
+  const persona = boss ? (CONFIG.boss.forcePersona ?? bossPersona(bossAppearance, rng)) : null;
   return {
     number: n,
     boss,
+    persona,
+    bossAppearance,
     intro,
     spawns,
-    speedMul: Math.min(W.maxSpeedMul, 1 + (n - 1) * W.speedPerWave),
+    speedMul: Math.min(W.maxSpeedMul, W.startSpeedMul + (n - 1) * W.speedPerWave),
     bossHpMul: boss ? 1 + (bossAppearance - 1) * W.bossHpPerAppearance : 1,
   };
 }

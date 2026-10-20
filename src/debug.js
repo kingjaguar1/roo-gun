@@ -6,11 +6,13 @@ import { CONFIG } from './config.js';
 //   ?bot=0.7        auto-tap HIMs with 70% accuracy (during sim and live play)
 //   ?wave=8         start on a later wave
 //   ?stare=1        force Boss Ruben's instant-death stare (chance 0-1)
+//   ?boss=evil      force every boss to be one persona (classic|showman|evil|silly)
 //   ?then=kill      after ?sim, force a kill, steal, gameover or win for a screenshot (?after=frames)
 //   ?screen=menu    show the menu even when other debug flags start a game
 export function setupDebug({ view, getGame }) {
   const params = new URLSearchParams(location.search);
   if (params.has('stare')) CONFIG.boss.revealDeathChance = Number(params.get('stare') || 1);
+  if (params.has('boss')) CONFIG.boss.forcePersona = params.get('boss');
   const enabled = params.has('debug') || params.has('sim') || params.has('bot');
   const botAccuracy = params.has('bot') ? Number(params.get('bot') || 0.8) : 0;
   let botTimer = 0;

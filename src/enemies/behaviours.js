@@ -76,6 +76,64 @@ export const BEHAVIOURS = {
     },
   },
 
+  // Silly Ruben has legs. He bounds at the core in flat arcs, kicks off the
+  // walls, and flips on the way. Same entrance as any boss, then it gets daft.
+  parkour: {
+    init(e, world) {
+      BEHAVIOURS.boss.init(e, world);
+      e.state.vx = 0;
+      e.state.vy = 0;
+      e.state.crouch = 0;
+    },
+    update(e, dt, world) {
+      const s = e.state;
+      if (s.phase !== 'attacking') {
+        BEHAVIOURS.boss.update(e, dt, world);
+        return;
+      }
+      const g = 1900 * e.scale;
+      e.legPhase += dt * 9;
+      if (s.crouch > 0) {
+        // Landed: a beat squatting before the next leap.
+        s.crouch -= dt;
+        e.spin = 0;
+        if (s.crouch <= 0) {
+          const dx = world.core.x - e.x;
+          const dy = world.core.y - e.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          e.dirX = dx / dist;
+          e.dirY = dy / dist;
+          s.vx = e.dirX * Math.max(e.speed * 3, 170 * e.scale);
+          s.vy = -(430 + Math.min(260, dist * 0.35)) * e.scale;
+          e.spinRate = (e.rng() < 0.5 ? -1 : 1) * (4 + e.rng() * 4);
+        }
+        return;
+      }
+      s.vy += g * dt;
+      e.x += s.vx * dt;
+      e.y += s.vy * dt;
+      e.spin += (e.spinRate ?? 6) * dt;
+      // Kick off the side walls instead of leaving the screen.
+      const { w, h } = world.view;
+      if (e.x < e.radius) { e.x = e.radius; s.vx = Math.abs(s.vx); }
+      if (e.x > w - e.radius) { e.x = w - e.radius; s.vx = -Math.abs(s.vx); }
+      // He bounds along the bottom and only vaults up as he closes on the
+      // core, instead of leaping straight to it and camping there.
+      const near = 1 - clamp(Math.abs(e.x - world.core.x) / (w * 0.55), 0, 1);
+      const ground = h - e.radius * 0.6;
+      const ledge = world.core.y + e.radius * 0.8;
+      const floor = ground + (ledge - ground) * near * near;
+      if (s.vy > 0 && e.y >= floor) {
+        e.y = floor;
+        s.vy = 0;
+        s.vx *= 0.3;
+        s.crouch = 0.22 + e.rng() * 0.12;
+        e.squash = 1;
+        e.landed = true; // game.js turns this into dust
+      }
+    },
+  },
+
   // Dramatic entrance from the top, a pause to taunt, then a slow advance.
   boss: {
     init(e, world) {

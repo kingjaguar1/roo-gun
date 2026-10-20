@@ -2,7 +2,30 @@
 // Browsers (especially iOS) only allow audio after a tap: call unlock() from input.
 const MUTE_KEY = 'roogun.muted';
 const VOLUME = 0.7;
-const THROTTLE = { shot: 0.03, hit: 0.03, kill: 0.035, echo: 0.06, combo: 0.05, stolen: 0.25 };
+const REBUILD_GAP = 1500; // ms: don't replace a dead context more than this often
+const THROTTLE = { shot: 0.03, hit: 0.03, kill: 0.035, echo: 0.06, combo: 0.05, stolen: 0.25, boing: 0.12 };
+
+// A short silent WAV, built in memory: no audio file, no network request.
+// Only used by keepSpeakerAwake() on iOS without the Audio Session API.
+function silentWavUrl(seconds = 0.05, rate = 8000) {
+  const frames = Math.round(seconds * rate);
+  const bytes = new ArrayBuffer(44 + frames * 2);
+  const v = new DataView(bytes);
+  const tag = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+  tag(0, 'RIFF');
+  v.setUint32(4, 36 + frames * 2, true);
+  tag(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true);        // fmt chunk size
+  v.setUint16(20, 1, true);         // PCM
+  v.setUint16(22, 1, true);         // mono
+  v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true);  // byte rate
+  v.setUint16(32, 2, true);         // block align
+  v.setUint16(34, 16, true);        // bits per sample
+  tag(36, 'data');
+  v.setUint32(40, frames * 2, true);
+  return URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
+}
 
 function readMuted() {
   try { return localStorage.getItem(MUTE_KEY) === '1'; } catch { return false; }
@@ -20,25 +43,19 @@ export class GameAudio {
     this.muted = readMuted();
     this.lastPlayed = new Map();
     this.started = false;
+    this.silenceKeeper = null;
+    this.lastRebuild = 0;
+    this.watching = false;
   }
 
   // Safe to call on every tap: builds the graph once, then keeps nudging the
   // context awake. Phones need the nudging; a desktop is running after one call.
   unlock() {
-    if (!this.ctx) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) return;
-      this.ctx = new AudioContextClass();
-      this.master = this.ctx.createGain();
-      this.master.gain.value = this.muted ? 0 : VOLUME;
-      const limiter = this.ctx.createDynamicsCompressor();
-      limiter.threshold.value = -10;
-      limiter.ratio.value = 8;
-      this.master.connect(limiter);
-      limiter.connect(this.ctx.destination);
-      this.noise = this.makeNoise(2);
-      this.watchForSleep();
-    }
+    if (!this.ctx && !this.build()) return;
+    // Re-asserted on every tap: the session type goes away with the session,
+    // so claiming it once at startup isn't enough.
+    if (!this.muted) this.setSession('playback');
+    this.keepSpeakerAwake();
     this.wake();
     // iOS hands over the speaker only once a source has actually played inside a
     // gesture, so push silence through until the context reports it is running.
@@ -51,22 +68,66 @@ export class GameAudio {
     }
   }
 
+  // The whole graph in one place, so a context another app killed can be
+  // thrown away and replaced.
+  build() {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return false;
+    this.ctx = new AudioContextClass();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : VOLUME;
+    const limiter = this.ctx.createDynamicsCompressor();
+    limiter.threshold.value = -10;
+    limiter.ratio.value = 8;
+    this.master.connect(limiter);
+    limiter.connect(this.ctx.destination);
+    this.noise = this.makeNoise(2);
+    this.started = false;
+    this.ctx.addEventListener?.('statechange', () => { if (this.ctx.state !== 'running') this.wake(); });
+    this.watchPage();
+    return true;
+  }
+
+  // Music (or a call) taking the speaker can leave iOS's context dead for good:
+  // resume() reports success, nothing is audible, and pausing the music doesn't
+  // give it back. Only a brand new context does.
+  rebuild() {
+    const dead = this.ctx;
+    this.ctx = null;
+    try { dead?.close?.(); } catch { /* already gone */ }
+    this.lastPlayed.clear();
+    return this.build();
+  }
+
   // resume() is async on phones, and iOS parks the context in a non-standard
   // 'interrupted' state after a call, a lock screen or a switch to another app.
-  wake() {
-    if (!this.ctx || this.ctx.state === 'running') return Promise.resolve(true);
-    return Promise.resolve(this.ctx.resume?.())
-      .then(() => this.ctx.state === 'running', () => false);
+  async wake() {
+    if (!this.ctx) return false;
+    if (this.ctx.state === 'running') return true;
+    if (!this.muted) this.setSession('playback');
+    try { await this.ctx.resume?.(); } catch { /* fall through to the rebuild */ }
+    if (this.ctx.state === 'running') return true;
+    // A resume that "worked" but left the context stuck means it's dead.
+    // Replace it, but not on every frame.
+    if (Date.now() - this.lastRebuild < REBUILD_GAP) return false;
+    this.lastRebuild = Date.now();
+    if (!this.rebuild()) return false;
+    try { await this.ctx.resume?.(); } catch { return false; }
+    return this.ctx.state === 'running';
   }
 
   // Coming back from the background leaves the context asleep with no tap to
-  // ride on, so wake it whenever the page is in front again.
-  watchForSleep() {
+  // ride on, so wake it whenever the page is in front again. Page-level only:
+  // the per-context listener is wired in build(), which can run more than once.
+  watchPage() {
+    if (this.watching) return;
+    this.watching = true;
     const wake = () => this.wake();
     document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
     window.addEventListener('pageshow', wake);
     window.addEventListener('focus', wake);
-    this.ctx.addEventListener?.('statechange', () => { if (this.ctx.state !== 'running') wake(); });
+    // iOS reports the audio session being taken away and handed back.
+    try { navigator.audioSession?.addEventListener?.('statechange', wake); } catch { /* unsupported */ }
   }
 
   // Unlocking on pointerdown alone isn't enough on every phone: older iOS only
@@ -78,10 +139,42 @@ export class GameAudio {
     }
   }
 
+  // iOS mutes "ambient" audio with the Ring/Silent switch, and a page that only
+  // synthesises oscillators counts as ambient. Declaring playback claims the
+  // speaker so the game is audible on silent; ambient hands it back when muted.
+  setSession(type) {
+    try {
+      if ('audioSession' in navigator) navigator.audioSession.type = type;
+    } catch { /* unsupported, or not allowed here */ }
+  }
+
+  // Older iOS has no Audio Session API. There, a looping (near-silent) media
+  // element is what moves the whole page into a playback session. The WAV is
+  // built here as a data URI: still no audio files, still no network requests.
+  keepSpeakerAwake() {
+    if ('audioSession' in navigator || this.silenceKeeper || this.muted) return;
+    try {
+      const el = new Audio(silentWavUrl());
+      el.loop = true;
+      el.playsInline = true;
+      el.volume = 0.001;
+      el.play().catch(() => { /* no gesture yet; the next tap tries again */ });
+      this.silenceKeeper = el;
+    } catch { /* no Audio element: the game is simply quiet on silent */ }
+  }
+
   toggleMute() {
     this.muted = !this.muted;
     writeMuted(this.muted);
     if (this.master) this.master.gain.setTargetAtTime(this.muted ? 0 : VOLUME, this.ctx.currentTime, 0.02);
+    // Give the speaker back when muted so the player's own music can resume.
+    this.setSession(this.muted ? 'ambient' : 'playback');
+    if (this.muted) {
+      this.silenceKeeper?.pause();
+      this.silenceKeeper = null;
+    } else {
+      this.keepSpeakerAwake();
+    }
     return this.muted;
   }
 
@@ -259,6 +352,35 @@ const SOUNDS = {
     SOUNDS.kill(a, t + 0.05, { power: 3 });
   },
 
+  // Evil Ruben: a long, low, delighted cackle that falls as it goes.
+  evilLaugh(a, t) {
+    a.tone({ type: 'sine', from: 1200, to: 320, start: t, duration: 0.5, volume: 0.1 });
+    for (let i = 0; i < 9; i++) {
+      const at = t + 0.18 + i * 0.165;
+      const pitch = 170 - i * 9;
+      a.noiseBurst({ start: at, duration: 0.05, volume: 0.1, type: 'bandpass', from: 1500, to: 1100, q: 1 });
+      a.voice({ from: pitch, to: pitch * 0.72, start: at + 0.02, duration: 0.15, volume: 0.4 });
+    }
+    a.tone({ type: 'sawtooth', from: 70, to: 45, start: t, duration: 1.8, volume: 0.1, attack: 0.05 });
+  },
+
+  // Superstar Ruben: a crowd going up, then a fanfare he has not earned.
+  crowdRoar(a, t) {
+    // The roar is filtered noise swelling and falling away.
+    a.noiseBurst({ start: t, duration: 2.2, volume: 0.45, type: 'bandpass', from: 700, to: 1600, q: 0.6 });
+    a.noiseBurst({ start: t + 0.1, duration: 1.9, volume: 0.3, type: 'highpass', from: 2200, to: 3000 });
+    [523, 659, 784, 1047, 1319].forEach((f, i) => {
+      a.tone({ type: 'square', from: f, start: t + 0.35 + i * 0.1, duration: 0.3, volume: 0.075, attack: 0.01 });
+    });
+    a.tone({ type: 'sawtooth', from: 131, start: t + 0.35, duration: 1.1, volume: 0.09, attack: 0.02, vibrato: 4 });
+  },
+
+  // Silly Ruben: the spring in his new legs.
+  boing(a, t) {
+    a.tone({ type: 'sine', from: 180, to: 900, start: t, duration: 0.16, volume: 0.16, vibrato: 40 });
+    a.tone({ type: 'triangle', from: 900, to: 220, start: t + 0.14, duration: 0.22, volume: 0.12, vibrato: 30 });
+  },
+
   // Dun dun DUNNN.
   bossReveal(a, t) {
     a.noiseBurst({ start: t, duration: 0.4, volume: 0.6, type: 'highpass', from: 6000, to: 1500 });
@@ -314,6 +436,11 @@ export function connectAudio(events, audio) {
   events.on('bossReveal', () => audio.play('bossReveal'));
   events.on('stareCharge', () => audio.play('evilGrin'));
   events.on('rubenStare', () => audio.play('laser'));
+  events.on('bossPersona', (key) => {
+    const sound = { evil: 'evilLaugh', showman: 'crowdRoar', silly: 'boing' }[key];
+    if (sound) audio.play(sound);
+  });
+  events.on('parkourLand', () => audio.play('boing'));
   events.on('bossDown', () => audio.play('bossDown'));
   events.on('dataGone', () => audio.play('coreBreak'));
 }

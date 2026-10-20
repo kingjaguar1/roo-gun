@@ -16,6 +16,7 @@ import { Explosions } from './fx/explosions.js';
 import { Shake } from './fx/shake.js';
 import { Flash } from './fx/flash.js';
 import { Popups } from './fx/popups.js';
+import { StageShow } from './fx/stageshow.js';
 import { drawBackground } from './ui/background.js';
 import { drawCoreBody, drawCoreGauge } from './ui/datacore-view.js';
 import { Hud } from './ui/hud.js';
@@ -49,6 +50,7 @@ export class Game {
     this.shake = new Shake();
     this.flash = new Flash();
     this.popups = new Popups();
+    this.stage = new StageShow();
     this.hud = new Hud();
 
     this.time = 0;
@@ -136,7 +138,10 @@ export class Game {
     }
 
     this.events.emit('kill', { enemy: e, points, combo, power });
-    if (e.variant.boss) this.bossDown(e);
+    if (e.variant.boss) {
+      if (e.persona?.stageShow) this.stage.stop();
+      this.bossDown(e);
+    }
   }
 
   // Boss Ruben arrives as a cartoon, then the mask comes off: a real photo.
@@ -165,6 +170,17 @@ export class Game {
     this.popups.add(`IT'S THE REAL ${name}!`, this.view.w / 2, y + 38 * s, {
       size: 38 * s, fill: '#ff2e63', life: 2.1, vy: 0, delay: 0.4, rotation: -0.05,
     });
+    const persona = e.persona;
+    if (persona?.stageShow) {
+      // His face owns the screen, then collapses into the spotlight.
+      this.stage.start(e.revealSprite?.source ?? e.revealSprite ?? e.sprite, this.bossTarget(e));
+      this.popups.clear();
+    }
+    if (persona?.taunt) {
+      this.popups.add(persona.taunt, this.view.w / 2, y + 76 * s, {
+        size: 28 * s, fill: persona.ring, life: 2.0, vy: 0, delay: 0.9, rotation: 0.04,
+      });
+    }
     this.events.emit('bossReveal', { enemy: e });
 
     // Rolled once per Boss Ruben appearance, never per shot.
@@ -173,6 +189,10 @@ export class Game {
         if (!e.dead && !this.over) this.startStare(e);
       });
     }
+  }
+
+  bossTarget(e) {
+    return { x: e.x, y: e.y, r: e.radius };
   }
 
   // Unlucky roll: he stops, frowns, grins, and his eyes start glowing.
@@ -326,11 +346,16 @@ export class Game {
     const alive = this.enemies.filter((e) => !e.dead && !e.escaping).length;
     const result = this.waves.update(dt, alive, (key, wave) => {
       const boss = VARIANTS[key].boss;
-      this.addEnemy(key, { speedMul: wave.speedMul, hpMul: boss ? wave.bossHpMul : 1 });
+      this.addEnemy(key, {
+        speedMul: wave.speedMul,
+        hpMul: boss ? wave.bossHpMul : 1,
+        persona: boss ? wave.persona : null,
+      });
       if (boss) {
         this.shake.add(0.7);
         this.flash.trigger('#ff2e63', 0.3, 2);
         this.events.emit('bossIncoming', { wave });
+        if (wave.persona) this.events.emit('bossPersona', wave.persona);
       }
     });
     if (result === 'cleared') this.waveCleared();
@@ -401,6 +426,19 @@ export class Game {
       e.update(gameDt, this.world);
       if (e.revealSprite && !e.revealed && e.state.phase === 'taunting') this.revealBoss(e);
       if (e.stare) this.updateStare(e, dt);
+      if (e.landed) {
+        e.landed = false;
+        this.shake.add(0.25);
+        this.events.emit('parkourLand', { enemy: e });
+        for (let i = 0; i < 10; i++) {
+          const a = Math.PI + (i / 10) * Math.PI;
+          this.particles.emit({
+            x: e.x, y: e.y + e.radius * 0.9, vx: Math.cos(a) * 180 * s, vy: Math.sin(a) * 120 * s,
+            size: 5 * s, color: '#d9c9ff', life: 0.45, drag: 3,
+          });
+        }
+      }
+      if (this.stage.active && e.persona?.stageShow && !e.dead) this.stage.update(gameDt, this.bossTarget(e));
       if (!this.over && !e.dead && !e.escaping && this.core.isReachedBy(e)) this.steal(e);
     }
     this.enemies = this.enemies.filter((e) => !e.dead && !(e.escaping && e.isOffscreen(this.view)));
@@ -426,9 +464,11 @@ export class Game {
     ctx.save();
     this.shake.apply(ctx, view);
     drawBackground(ctx, view, this.time, this.core);
+    this.stage.drawLights(ctx, view, this.time);
     drawCoreBody(ctx, this.core, view);
     for (const e of this.enemies) drawEnemy(ctx, e, this.hims.name);
     for (const e of this.enemies) if (e.stare) drawDeathStare(ctx, e, this.gun.origin(view), view);
+    this.stage.drawFace(ctx, view);
     this.particles.draw(ctx);
     this.explosions.draw(ctx);
     this.gun.drawBolts(ctx, view);

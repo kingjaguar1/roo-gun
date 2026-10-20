@@ -25,16 +25,46 @@ export class HimLibrary {
   }
 }
 
-export async function loadHimLibrary(manifestUrl) {
-  let manifest = null;
-  const url = new URL(manifestUrl, location.href);
+const UNLOCK_KEY = 'roogun.unlock';
+
+// The published game ships no photos in its public manifest. Someone with the
+// code opens ?unlock=<code> once and their phone remembers it, which points
+// the game at a second manifest only that code can name. It is a hidden door,
+// not a lock: anyone given the code or the file name sees the photos too.
+function unlockCode() {
+  let code = null;
+  let lock = false;
+  try {
+    const params = new URLSearchParams(location.search);
+    code = params.get('unlock');
+    lock = params.has('lock');
+  } catch { /* no URL to read */ }
+  try {
+    if (lock) localStorage.removeItem(UNLOCK_KEY);   // ?lock forgets it again
+    else if (code) localStorage.setItem(UNLOCK_KEY, code);
+    else code = localStorage.getItem(UNLOCK_KEY);
+  } catch { /* private mode: it just won't be remembered */ }
+  if (lock) return null;
+  return code && /^[\w-]{1,64}$/.test(code) ? code : null;
+}
+
+async function readManifest(url) {
   try {
     const res = await fetch(url, { cache: 'no-cache' });
-    if (res.ok) manifest = await res.json();
-    else console.warn(`HIM manifest returned ${res.status}`);
+    if (res.ok) return await res.json();
+    if (res.status !== 404) console.warn(`HIM manifest returned ${res.status}`);
   } catch (err) {
     console.warn('Could not read HIM manifest; Boss Ruben stays a cartoon.', err);
   }
+  return null;
+}
+
+export async function loadHimLibrary(manifestUrl) {
+  const url = new URL(manifestUrl, location.href);
+  // With a code, try the unlocked manifest first and fall back if it isn't there.
+  const code = unlockCode();
+  let manifest = code ? await readManifest(new URL(`him-${code}.json`, url)) : null;
+  if (!manifest) manifest = await readManifest(url);
 
   const name = String(manifest?.name || 'HIM');
   const entries = (manifest?.photos ?? []).map(normalizeEntry).filter(Boolean);
@@ -116,6 +146,9 @@ function makePhotoSprite(img, entry) {
   const h = img.naturalHeight;
   const crop = photoCrop(w, h, entry);
   g.drawImage(img, crop.sx, crop.sy, crop.side, crop.side, 0, 0, S, S);
+  // The uncropped photo, for anything that wants the whole picture
+  // (fx/stageshow.js fills the screen with it).
+  c.source = img;
   // Face features for the death stare, in sprite space.
   if (Array.isArray(entry.eyes) && entry.eyes.length === 2) c.eyes = entry.eyes.map((p) => photoPointToSprite(p, w, h, crop));
   if (Array.isArray(entry.mouth)) c.mouth = photoPointToSprite(entry.mouth, w, h, crop);
