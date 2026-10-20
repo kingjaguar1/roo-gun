@@ -4,8 +4,8 @@ import { loadHimLibrary } from './assets.js';
 import { loadFonts } from './ui/draw.js';
 import { Events } from './events.js';
 import { GameAudio, connectAudio } from './audio.js';
-import { SCREEN, loadRecords, saveRecords, updateRecords } from './state.js';
-import { MenuScreen, GameOverScreen } from './ui/screens.js';
+import { SCREEN, loadRecords, saveRecords, updateRecords, isUnlocked, rememberUnlocked } from './state.js';
+import { MenuScreen, CodeScreen, GameOverScreen } from './ui/screens.js';
 import { MuteButton } from './ui/button.js';
 import { setupDebug } from './debug.js';
 import { Game } from './game.js';
@@ -23,10 +23,12 @@ connectAudio(events, audio);
 audio.listenForTaps();
 
 const menu = new MenuScreen({ view, hims });
+const codeScreen = new CodeScreen({ view, hims });
 const gameOver = new GameOverScreen({ view, hims });
 const muteButton = new MuteButton();
 let records = loadRecords();
-let screen = SCREEN.MENU;
+// Nobody gets past the door without the code, but a device only types it once.
+let screen = isUnlocked(CONFIG.access.code) ? SCREEN.MENU : SCREEN.LOCKED;
 let game = null;
 
 const debug = setupDebug({ view, getGame: () => game });
@@ -60,6 +62,16 @@ attachInput(canvas, {
       audio.toggleMute();
       return;
     }
+    if (screen === SCREEN.LOCKED) {
+      const action = codeScreen.press(x, y);
+      if (action === 'key') audio.play('click');
+      if (action === 'wrong') audio.play('comboLost');
+      if (action === 'open') {
+        rememberUnlocked(CONFIG.access.code);
+        audio.play('waveCleared');
+      }
+      return;
+    }
     if (screen === SCREEN.MENU) {
       const action = menu.press(x, y);
       if (action === 'play') {
@@ -83,6 +95,14 @@ attachInput(canvas, {
 });
 
 function update(dt) {
+  if (screen === SCREEN.LOCKED) {
+    codeScreen.update(dt);
+    if (codeScreen.done) {
+      menu.enter();
+      screen = SCREEN.MENU;
+    }
+    return;
+  }
   if (screen === SCREEN.MENU) {
     menu.update(dt);
   } else {
@@ -93,6 +113,10 @@ function update(dt) {
 
 function render() {
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  if (screen === SCREEN.LOCKED) {
+    codeScreen.draw(ctx);
+    return;
+  }
   if (screen === SCREEN.MENU) {
     menu.draw(ctx, records, level);
   } else {
@@ -102,7 +126,9 @@ function render() {
   muteButton.draw(ctx, view, audio.muted);
 }
 
-// Debug runs (?sim, ?bot, ?wave) skip the menu.
+// Debug runs (?sim, ?bot, ?wave) skip the door and the menu.
+if (debug.enabled || debug.params.has('wave')) screen = SCREEN.MENU;
+if (debug.params.get('code') === 'show') screen = SCREEN.LOCKED;
 if (debug.enabled || debug.params.has('wave')) startGame();
 if (debug.params.get('screen') === 'menu') screen = SCREEN.MENU;
 if (debug.simulateSeconds) {

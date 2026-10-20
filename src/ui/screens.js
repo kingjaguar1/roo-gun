@@ -6,6 +6,7 @@ import { Particles } from '../fx/particles.js';
 import { Explosions } from '../fx/explosions.js';
 import { Shake } from '../fx/shake.js';
 import { clamp, easeOutBack } from '../math.js';
+import { CONFIG } from '../config.js';
 
 const ORBITERS = 7;
 
@@ -207,6 +208,141 @@ const WIN_QUIPS = [
 ];
 
 // Comedic results screen drawn over the frozen game: failure, or a level won.
+// The door. A comic keypad: tap the code in and you're through, and the
+// device remembers so nobody types it twice.
+export class CodeScreen {
+  constructor({ view, hims }) {
+    this.view = view;
+    this.hims = hims;
+    this.keys = [];
+    for (let i = 0; i < 12; i++) {
+      const label = i < 9 ? String(i + 1) : i === 9 ? '←' : i === 10 ? '0' : 'GO';
+      this.keys.push({
+        label,
+        button: new Button(label, {
+          fill: label === 'GO' ? '#39ff88' : label === '←' ? '#b36bff' : '#3fd0ff',
+          size: 34,
+        }),
+      });
+    }
+    this.enter();
+  }
+
+  enter() {
+    this.typed = '';
+    this.time = 0;
+    this.wrong = 0;
+    this.opened = 0;
+  }
+
+  layout() {
+    const { w, h, scale: s, safe } = this.view;
+    const cols = 3;
+    const kw = Math.min(w * 0.24, 88 * s);
+    const kh = kw * 0.72;
+    const gapX = Math.min(w * 0.05, 16 * s);
+    const gapY = gapX * 0.7;
+    const gridW = cols * kw + (cols - 1) * gapX;
+    const left = (w - gridW) / 2 + kw / 2;
+    const bottom = h - safe.bottom - 30 * s - kh / 2;
+    const top = bottom - 3 * (kh + gapY);
+    this.keys.forEach((key, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      key.button.layout(left + col * (kw + gapX), top + row * (kh + gapY), kw, kh);
+    });
+    this.boxTop = top - 92 * s;
+  }
+
+  press(x, y) {
+    if (this.opened > 0) return null;
+    for (const key of this.keys) {
+      if (!key.button.contains(x, y)) continue;
+      key.button.press();
+      if (key.label === '←') this.typed = this.typed.slice(0, -1);
+      else if (key.label === 'GO') return this.submit();
+      else if (this.typed.length < CONFIG.access.code.length) this.typed += key.label;
+      // Typing the last digit opens it without needing GO.
+      if (this.typed.length === CONFIG.access.code.length) return this.submit();
+      return 'key';
+    }
+    return null;
+  }
+
+  submit() {
+    if (this.typed === CONFIG.access.code) {
+      this.opened = 0.001;
+      return 'open';
+    }
+    this.wrong = 1;
+    this.typed = '';
+    return 'wrong';
+  }
+
+  update(dt) {
+    this.time += dt;
+    this.wrong = Math.max(0, this.wrong - dt * 1.6);
+    if (this.opened > 0) this.opened += dt;
+    for (const key of this.keys) key.button.update(dt);
+  }
+
+  // True once the "you're in" flourish has finished.
+  get done() {
+    return this.opened > 0.55;
+  }
+
+  draw(ctx) {
+    const { w, h, scale: s, safe } = this.view;
+    this.layout();
+    const t = this.time;
+    const name = this.hims.name.toUpperCase();
+    const shake = this.wrong > 0 ? Math.sin(this.wrong * 50) * 10 * s * this.wrong : 0;
+
+    drawBackground(ctx, this.view, t, { x: w * 0.5, y: h * 0.3, radius: 40 * s, alarm: 0.2, damage: 0 });
+    ctx.fillStyle = 'rgba(11, 6, 32, 0.55)';
+    ctx.fillRect(0, 0, w, h);
+
+    const top = safe.top;
+    comicText(ctx, 'ROO GUN', w / 2, top + 64 * s, 50 * s, { fill: '#ffd23f', rotation: -0.03, maxWidth: w * 0.9 });
+    comicText(ctx, 'THE DATA DEFENDERS', w / 2, top + 104 * s, 20 * s, { fill: '#3fd0ff', maxWidth: w * 0.85 });
+    comicText(ctx, this.opened > 0 ? 'ACCESS GRANTED' : 'ENTER THE CODE', w / 2, this.boxTop - 54 * s, 26 * s, {
+      fill: this.opened > 0 ? '#39ff88' : this.wrong > 0 ? '#ff2e63' : '#fff', maxWidth: w * 0.9,
+    });
+
+    // One box per digit, filling up as they type.
+    const n = CONFIG.access.code.length;
+    const bw = Math.min(w * 0.13, 46 * s);
+    const bh = bw * 1.25;
+    const gap = Math.min(w * 0.025, 9 * s);
+    const startX = (w - (n * bw + (n - 1) * gap)) / 2;
+    for (let i = 0; i < n; i++) {
+      const filled = i < this.typed.length;
+      const x = startX + shake + i * (bw + gap);
+      roundRect(ctx, x, this.boxTop, bw, bh, 10 * s);
+      ctx.fillStyle = this.opened > 0 ? 'rgba(57, 255, 136, 0.3)' : 'rgba(11, 6, 32, 0.65)';
+      ctx.fill();
+      ctx.lineWidth = 3.5 * s;
+      ctx.strokeStyle = this.wrong > 0 ? '#ff2e63' : filled ? '#ffd23f' : 'rgba(255, 255, 255, 0.45)';
+      ctx.stroke();
+      if (filled) {
+        comicText(ctx, this.typed[i], x + bw / 2, this.boxTop + bh / 2 + 2 * s, 30 * s, { fill: '#fff' });
+      }
+    }
+
+    if (this.wrong > 0) {
+      comicText(ctx, 'NOPE. TRY AGAIN.', w / 2, this.boxTop + bh + 30 * s, 20 * s, {
+        fill: '#ff2e63', maxWidth: w * 0.9,
+      });
+    } else if (this.opened > 0) {
+      comicText(ctx, `${name} IS WAITING`, w / 2, this.boxTop + bh + 30 * s, 20 * s, {
+        fill: '#39ff88', maxWidth: w * 0.9,
+      });
+    }
+
+    for (const key of this.keys) key.button.draw(ctx, s, t);
+  }
+}
+
 export class GameOverScreen {
   constructor({ view, hims }) {
     this.view = view;

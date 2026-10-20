@@ -1,5 +1,22 @@
 // Which screen is showing, plus high-score records kept on this device.
-export const SCREEN = { MENU: 'menu', PLAYING: 'playing', GAME_OVER: 'gameOver' };
+export const SCREEN = { LOCKED: 'locked', MENU: 'menu', PLAYING: 'playing', GAME_OVER: 'gameOver' };
+
+const ACCESS_KEY = 'roogun.access';
+
+// A device only types the code once.
+export function isUnlocked(code, storage = globalThis.localStorage) {
+  try {
+    return storage.getItem(ACCESS_KEY) === code;
+  } catch {
+    return false; // private browsing: they'll type it each time
+  }
+}
+
+export function rememberUnlocked(code, storage = globalThis.localStorage) {
+  try {
+    storage.setItem(ACCESS_KEY, code);
+  } catch { /* nothing to do: it just won't be remembered */ }
+}
 
 const RECORDS_KEY = 'roogun.records';
 const EMPTY_RECORDS = { highScore: 0, bestWave: 0 };

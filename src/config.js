@@ -4,6 +4,10 @@
 export const CONFIG = {
   reference: { w: 400, h: 760, minScale: 0.8, maxScale: 1.6 },
 
+  // The code players type to get in. It ships in the page, so treat it as a
+  // doorway and not a lock: anyone who reads the source can find it.
+  access: { code: '21745' },
+
   data: { start: 100 },
 
   core: {
