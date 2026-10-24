@@ -42,33 +42,33 @@ export const CONFIG = {
 
   // Short levels you can link to with ?level=<name>. Clearing finalWave wins.
   levels: {
-    proto: { name: 'PROTO LEVEL', goal: 'SURVIVE 3 WAVES AND BEAT BOSS {NAME}', startWave: 6, finalWave: 8 },
+    proto: { name: 'PROTO LEVEL', goal: 'SURVIVE 3 WAVES AND BEAT BOSS {NAME}', startWave: 2, finalWave: 4 },
   },
 
   waves: {
     breakTime: 1.0,        // pause between waves
     bannerTime: 1.1,       // "WAVE 3" banner before spawning starts
     baseCount: 4,
-    countPerWave: 1.6,
+    countPerWave: 1.0,
     maxCount: 40,
     startInterval: 0.95,   // seconds between spawns on wave 1
     intervalDecay: 0.92,
     minInterval: 0.32,
     startSpeedMul: 1.25,   // wave 1 is already brisk, not a warm-up
-    speedPerWave: 0.07,
+    speedPerWave: 0.05,
     // The opening waves get a lift that fades out by wave 4, so the game
     // starts at pace instead of climbing into it.
-    earlyBoost: { waves: 3, speed: 0.18 },
-    maxSpeedMul: 2.1,
-    maxAlive: 18,
-    burstFromWave: 6,      // later waves sometimes spawn several at once
+    earlyBoost: { waves: 3, speed: 0.15 },
+    maxSpeedMul: 1.9,
+    maxAlive: 14,
+    burstFromWave: 9,      // later waves sometimes spawn several at once
     burstChance: 0.25,
-    unlocks: { fast: 2, big: 4, sneaky: 6 },
-    bossFirstWave: 8,
+    unlocks: { fast: 2, big: 3, sneaky: 6 },
+    bossFirstWave: 4,
     bossEvery: 4,
     // Beating a boss earns a breather: the next few waves are lighter and
     // build back up, so waves 9-11 aren't harder than the boss you just beat.
-    relief: { waves: 3, from: 0.6, speedShare: 0.4 },
-    bossHpPerAppearance: 0.35,
+    relief: { waves: 3, from: 0.5, speedShare: 0.4 },
+    bossHpPerAppearance: 0.3,
   },
 };
