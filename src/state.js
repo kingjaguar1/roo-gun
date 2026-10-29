@@ -2,6 +2,22 @@
 export const SCREEN = { LOCKED: 'locked', MENU: 'menu', PLAYING: 'playing', GAME_OVER: 'gameOver' };
 
 const ACCESS_KEY = 'roogun.access';
+const NAME_KEY = 'roogun.name';
+
+// The name that goes on the shared board. Asked for once, then kept.
+export function loadName(storage = globalThis.localStorage) {
+  try {
+    return storage.getItem(NAME_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function saveName(name, storage = globalThis.localStorage) {
+  try {
+    storage.setItem(NAME_KEY, name);
+  } catch { /* private browsing: they'll be asked again next time */ }
+}
 
 // A device only types the code once.
 export function isUnlocked(code, storage = globalThis.localStorage) {

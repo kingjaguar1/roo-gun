@@ -4,7 +4,8 @@ import { loadHimLibrary } from './assets.js';
 import { loadFonts } from './ui/draw.js';
 import { Events } from './events.js';
 import { GameAudio, connectAudio } from './audio.js';
-import { SCREEN, loadRecords, saveRecords, updateRecords, isUnlocked, rememberUnlocked } from './state.js';
+import { SCREEN, loadRecords, saveRecords, updateRecords, isUnlocked, rememberUnlocked, loadName, saveName } from './state.js';
+import { fetchTop, submit } from './leaderboard.js';
 import { MenuScreen, CodeScreen, GameOverScreen } from './ui/screens.js';
 import { MuteButton } from './ui/button.js';
 import { setupDebug } from './debug.js';
@@ -29,6 +30,7 @@ const muteButton = new MuteButton();
 let records = loadRecords();
 // Nobody gets past the door without the code, but a device only types it once.
 let screen = isUnlocked(CONFIG.access.code) ? SCREEN.MENU : SCREEN.LOCKED;
+refreshBoard();
 let game = null;
 
 const debug = setupDebug({ view, getGame: () => game });
@@ -43,6 +45,24 @@ function startGame() {
   screen = SCREEN.PLAYING;
 }
 
+// Asked once, then remembered. A plain prompt is not pretty, but it is the
+// native keyboard on a phone and it works everywhere.
+function playerName() {
+  let name = loadName();
+  if (name) return name;
+  let typed = null;
+  try {
+    typed = window.prompt('Name for the leaderboard?', '');
+  } catch { /* blocked: play on without a board entry */ }
+  name = String(typed ?? '').trim().slice(0, 12);
+  if (name) saveName(name);
+  return name;
+}
+
+function refreshBoard() {
+  fetchTop().then((rows) => menu.setBoard(rows));
+}
+
 function showResults(stats, sound) {
   const result = updateRecords(records, stats);
   records = result.records;
@@ -50,6 +70,11 @@ function showResults(stats, sound) {
   gameOver.enter(stats, { newHighScore: result.newHighScore });
   screen = SCREEN.GAME_OVER;
   audio.play(sound);
+  // Nothing to brag about on a zero, and nothing to ask a name for.
+  if (stats.score > 0) {
+    const name = playerName();
+    if (name) submit({ name, score: stats.score, wave: stats.wave }).then(refreshBoard);
+  }
 }
 
 events.on('gameOver', (stats) => showResults(stats, 'gameOver'));

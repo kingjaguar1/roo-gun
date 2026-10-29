@@ -21,7 +21,14 @@ export class MenuScreen {
     this.explosions = new Explosions(this.particles);
     this.shake = new Shake();
     this.playButton = new Button('PLAY', { fill: '#ff2e63', size: 46 });
+    this.board = [];
     this.enter();
+  }
+
+  // Whatever the leaderboard last returned. Empty until it answers, and
+  // empty forever if there is no network - the menu just shows less.
+  setBoard(rows) {
+    this.board = rows ?? [];
   }
 
   enter() {
@@ -49,7 +56,7 @@ export class MenuScreen {
     this.core.radius = 42 * s;
     this.core.x = w / 2;
     this.core.y = h * 0.57;
-    this.playButton.layout(w / 2, h * 0.8, Math.min(w * 0.7, 280 * s), 78 * s);
+    this.playButton.layout(w / 2, h * 0.74, Math.min(w * 0.7, 280 * s), 74 * s);
   }
 
   orbiterPosition(o) {
@@ -222,6 +229,23 @@ export class MenuScreen {
         fill: '#3fd0ff', strokeWidth: 5 * s, maxWidth: w * 0.8,
       });
     }
+    if (this.board.length) {
+      below += 22 * s;
+      comicText(ctx, 'TOP RUBEN STOPPERS', w / 2, below, 15 * s, {
+        fill: '#ffd23f', strokeWidth: 4 * s, maxWidth: w * 0.8,
+      });
+      below += 20 * s;
+      // Only draw what clears the footer: short phones get fewer names.
+      const room = Math.floor((h - safe.bottom - 34 * s - below) / (18 * s));
+      this.board.slice(0, Math.max(0, Math.min(3, room))).forEach((row, i) => {
+        const line = `${i + 1}. ${row.name}  ${row.score.toLocaleString('en-US')}  ·  W${row.wave}`;
+        comicText(ctx, line, w / 2, below + i * 18 * s, 14 * s, {
+          fill: i === 0 ? '#39ff88' : 'rgba(255, 255, 255, 0.9)',
+          strokeWidth: 4 * s, shadow: false, maxWidth: w * 0.86,
+        });
+      });
+    }
+
     comicText(ctx, `STARRING ${this.hims.name.toUpperCase()} AS EVERY SINGLE ENEMY`, w / 2, h - safe.bottom - 20 * s, 13 * s, {
       fill: 'rgba(255, 255, 255, 0.85)', strokeWidth: 4 * s, shadow: false, maxWidth: w * 0.62,
     });
