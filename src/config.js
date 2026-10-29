@@ -51,10 +51,10 @@ export const CONFIG = {
     baseCount: 4,
     countPerWave: 1.0,
     maxCount: 40,
-    startInterval: 0.95,   // seconds between spawns on wave 1
+    startInterval: 0.80,   // seconds between spawns on wave 1
     intervalDecay: 0.92,
     minInterval: 0.32,
-    startSpeedMul: 1.25,   // wave 1 is already brisk, not a warm-up
+    startSpeedMul: 1.35,   // wave 1 is already brisk, not a warm-up
     speedPerWave: 0.05,
     // The opening waves get a lift that fades out by wave 4, so the game
     // starts at pace instead of climbing into it.
