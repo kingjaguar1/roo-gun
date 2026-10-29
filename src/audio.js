@@ -3,7 +3,7 @@
 const MUTE_KEY = 'roogun.muted';
 const VOLUME = 0.7;
 const REBUILD_GAP = 1500; // ms: don't replace a dead context more than this often
-const THROTTLE = { shot: 0.03, hit: 0.03, kill: 0.035, echo: 0.06, combo: 0.05, stolen: 0.25, boing: 0.12 };
+const THROTTLE = { shot: 0.03, hit: 0.03, kill: 0.035, echo: 0.06, combo: 0.05, stolen: 0.25, boing: 0.12, whoosh: 0.1 };
 
 // A short silent WAV, built in memory: no audio file, no network request.
 // Only used by keepSpeakerAwake() on iOS without the Audio Session API.
@@ -26,6 +26,15 @@ function silentWavUrl(seconds = 0.05, rate = 8000) {
   v.setUint32(40, frames * 2, true);
   return URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' }));
 }
+
+// A soft-knee clipping curve. Feeding a sawtooth through this is what makes
+// the difference between a laugh and a monster's laugh.
+const GROWL_CURVE = (() => {
+  const n = 1024;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) curve[i] = Math.tanh(((i / (n - 1)) * 2 - 1) * 3.4);
+  return curve;
+})();
 
 function readMuted() {
   try { return localStorage.getItem(MUTE_KEY) === '1'; } catch { return false; }
@@ -252,6 +261,38 @@ export class GameAudio {
     osc.stop(start + duration + 0.05);
   }
 
+  // A throat rather than a mouth: sawtooth, wobbled, clipped, then rolled off
+  // so it stays low and gravelly instead of fizzing.
+  growl({ from, to = from * 0.8, start, duration, volume = 0.4, wobble = 23 }) {
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(from, start);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, to), start + duration);
+
+    // A fast shallow waver in the pitch, like a voice that can't hold steady.
+    const lfo = this.ctx.createOscillator();
+    const depth = this.ctx.createGain();
+    lfo.frequency.value = wobble;
+    depth.gain.value = from * 0.07;
+    lfo.connect(depth);
+    depth.connect(osc.frequency);
+    lfo.start(start);
+    lfo.stop(start + duration + 0.05);
+
+    const shaper = this.ctx.createWaveShaper();
+    shaper.curve = GROWL_CURVE;
+    shaper.oversample = '2x';
+    const tame = this.ctx.createBiquadFilter();
+    tame.type = 'lowpass';
+    tame.frequency.setValueAtTime(1500, start);
+    tame.frequency.exponentialRampToValueAtTime(700, start + duration);
+    osc.connect(shaper);
+    shaper.connect(tame);
+    tame.connect(this.envelope(start, duration, volume, 0.014));
+    osc.start(start);
+    osc.stop(start + duration + 0.05);
+  }
+
   noiseBurst({ start, duration, volume = 0.5, type = 'lowpass', from = 3000, to = 200, q = 0.8 }) {
     const src = this.ctx.createBufferSource();
     src.buffer = this.noise;
@@ -352,16 +393,30 @@ const SOUNDS = {
     SOUNDS.kill(a, t + 0.05, { power: 3 });
   },
 
-  // Evil Ruben: a long, low, delighted cackle that falls as it goes.
+  // Evil Ruben: MWAH HA HA HA. An octave below a human laugh, dragged
+  // through a waveshaper, with a sub underneath so it lands in your chest.
   evilLaugh(a, t) {
-    a.tone({ type: 'sine', from: 1200, to: 320, start: t, duration: 0.5, volume: 0.1 });
-    for (let i = 0; i < 9; i++) {
-      const at = t + 0.18 + i * 0.165;
-      const pitch = 170 - i * 9;
-      a.noiseBurst({ start: at, duration: 0.05, volume: 0.1, type: 'bandpass', from: 1500, to: 1100, q: 1 });
-      a.voice({ from: pitch, to: pitch * 0.72, start: at + 0.02, duration: 0.15, volume: 0.4 });
+    // MWAH - swells up into the shout, then sags away.
+    a.growl({ from: 92, to: 148, start: t, duration: 0.17, volume: 0.5, wobble: 16 });
+    a.growl({ from: 148, to: 104, start: t + 0.16, duration: 0.34, volume: 0.46 });
+    a.tone({ type: 'sine', from: 46, to: 34, start: t, duration: 0.62, volume: 0.5 });
+
+    // HA HA HA HA - each one lower, rougher and a little slower.
+    for (let i = 0; i < 4; i++) {
+      const at = t + 0.56 + i * 0.225;
+      const f = 132 - i * 12;
+      a.noiseBurst({ start: at, duration: 0.045, volume: 0.16, type: 'bandpass', from: 900, to: 480, q: 1.2 });
+      a.growl({ from: f * 1.18, to: f * 0.78, start: at + 0.01, duration: 0.18, volume: 0.44 });
+      a.tone({ type: 'sine', from: f / 2, to: f / 2.7, start: at, duration: 0.22, volume: 0.32 });
     }
-    a.tone({ type: 'sawtooth', from: 70, to: 45, start: t, duration: 1.8, volume: 0.1, attack: 0.05 });
+    // The rumble he leaves behind.
+    a.tone({ type: 'sine', from: 40, to: 28, start: t + 0.5, duration: 1.2, volume: 0.35, attack: 0.08 });
+  },
+
+  // Silly Ruben clearing a hurdle.
+  whoosh(a, t) {
+    a.noiseBurst({ start: t, duration: 0.28, volume: 0.3, type: 'bandpass', from: 500, to: 2600, q: 1.1 });
+    a.tone({ type: 'sine', from: 300, to: 900, start: t, duration: 0.22, volume: 0.07 });
   },
 
   // Superstar Ruben: a crowd going up, then a fanfare he has not earned.
@@ -441,6 +496,7 @@ export function connectAudio(events, audio) {
     if (sound) audio.play(sound);
   });
   events.on('parkourLand', () => audio.play('boing'));
+  events.on('parkourLeap', () => audio.play('whoosh'));
   events.on('bossDown', () => audio.play('bossDown'));
   events.on('dataGone', () => audio.play('coreBreak'));
 }

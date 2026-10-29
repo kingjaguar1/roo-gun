@@ -24,6 +24,60 @@ export function facePoint(e, [fx, fy]) {
   return { x: e.x + lx * Math.cos(a) - ly * Math.sin(a), y: e.y + lx * Math.sin(a) + ly * Math.cos(a) };
 }
 
+// The hurdle Silly Ruben sets himself. Pops up, then fades once he is over it.
+export function drawHurdle(ctx, hurdle) {
+  const s = hurdle.scale;
+  const pop = Math.min(1, hurdle.life / 0.18);
+  const fade = hurdle.life > 1.6 ? Math.max(0, 1 - (hurdle.life - 1.6) / 0.8) : 1;
+  if (fade <= 0.01) return;
+  const w = 76 * s;
+  const h = 54 * s * pop;
+  const x = hurdle.x;
+  const y = hurdle.y;
+
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.lineWidth = 4 * s;
+  ctx.strokeStyle = '#0b0620';
+
+  // Two legs...
+  for (const side of [-1, 1]) {
+    roundRect(ctx, x + side * w * 0.42 - 4 * s, y - h, 8 * s, h, 4 * s);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.stroke();
+    // ...each with a foot so it reads as standing on something.
+    roundRect(ctx, x + side * w * 0.42 - 13 * s, y - 5 * s, 26 * s, 8 * s, 4 * s);
+    ctx.fillStyle = '#d9d4e8';
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // The bar, in warning stripes.
+  const barY = y - h;
+  const barH = 15 * s;
+  roundRect(ctx, x - w / 2, barY, w, barH, 5 * s);
+  ctx.fillStyle = '#ffd23f';
+  ctx.fill();
+  ctx.save();
+  roundRect(ctx, x - w / 2, barY, w, barH, 5 * s);
+  ctx.clip();
+  ctx.fillStyle = '#ff2e63';
+  for (let i = -1; i < 6; i++) {
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2 + i * 16 * s, barY);
+    ctx.lineTo(x - w / 2 + i * 16 * s + 8 * s, barY);
+    ctx.lineTo(x - w / 2 + i * 16 * s - 2 * s, barY + barH);
+    ctx.lineTo(x - w / 2 + i * 16 * s - 10 * s, barY + barH);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  roundRect(ctx, x - w / 2, barY, w, barH, 5 * s);
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function drawEnemy(ctx, e, name) {
   if (e.alpha <= 0.01) return;
   const v = e.variant;

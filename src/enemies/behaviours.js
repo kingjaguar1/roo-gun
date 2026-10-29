@@ -84,6 +84,7 @@ export const BEHAVIOURS = {
       e.state.vx = 0;
       e.state.vy = 0;
       e.state.crouch = 0;
+      e.state.jumps = 0;
     },
     update(e, dt, world) {
       const s = e.state;
@@ -93,6 +94,10 @@ export const BEHAVIOURS = {
       }
       const g = 1900 * e.scale;
       e.legPhase += dt * 9;
+      if (e.hurdle) {
+        e.hurdle.life += dt;
+        if (e.hurdle.life > 2.4) e.hurdle = null;
+      }
       if (s.crouch > 0) {
         // Landed: a beat squatting before the next leap.
         s.crouch -= dt;
@@ -105,7 +110,23 @@ export const BEHAVIOURS = {
           e.dirY = dy / dist;
           s.vx = e.dirX * Math.max(e.speed * 3, 170 * e.scale);
           s.vy = -(430 + Math.min(260, dist * 0.35)) * e.scale;
-          e.spinRate = (e.rng() < 0.5 ? -1 : 1) * (4 + e.rng() * 4);
+          s.jumps++;
+          // Every other leap he sets himself a hurdle and backflips it.
+          if (s.jumps % 2 === 1) {
+            const airtime = (2 * Math.abs(s.vy)) / g;
+            // The hurdle goes where the top of his arc will be.
+            e.hurdle = {
+              x: e.x + s.vx * airtime * 0.5,
+              y: e.y + e.radius * 0.55,
+              scale: e.scale,
+              life: 0,
+            };
+            // Exactly one rotation over the airtime, so he lands upright.
+            e.spinRate = -(Math.PI * 2) / Math.max(0.25, airtime * 0.82);
+            e.leapt = true; // game.js turns this into a whoosh
+          } else {
+            e.spinRate = (e.rng() < 0.5 ? -1 : 1) * (4 + e.rng() * 4);
+          }
         }
         return;
       }
@@ -128,6 +149,7 @@ export const BEHAVIOURS = {
         s.vy = 0;
         s.vx *= 0.3;
         s.crouch = 0.22 + e.rng() * 0.12;
+        e.spin = 0; // stick the landing on the same frame, never mid-flip
         e.squash = 1;
         e.landed = true; // game.js turns this into dust
       }

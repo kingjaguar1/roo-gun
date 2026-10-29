@@ -3,7 +3,7 @@ import { Events } from './events.js';
 import { Timers } from './timers.js';
 import { pick } from './rng.js';
 import { Spawner } from './enemies/spawner.js';
-import { drawEnemy } from './enemies/render.js';
+import { drawEnemy, drawHurdle } from './enemies/render.js';
 import { drawDeathStare } from './fx/deathstare.js';
 import { VARIANTS, variantLabel } from './enemies/variants.js';
 import { findTarget } from './hit.js';
@@ -426,6 +426,10 @@ export class Game {
       e.update(gameDt, this.world);
       if (e.revealSprite && !e.revealed && e.state.phase === 'taunting') this.revealBoss(e);
       if (e.stare) this.updateStare(e, dt);
+      if (e.leapt) {
+        e.leapt = false;
+        this.events.emit('parkourLeap', { enemy: e });
+      }
       if (e.landed) {
         e.landed = false;
         this.shake.add(0.25);
@@ -466,6 +470,7 @@ export class Game {
     drawBackground(ctx, view, this.time, this.core);
     this.stage.drawLights(ctx, view, this.time);
     drawCoreBody(ctx, this.core, view);
+    for (const e of this.enemies) if (e.hurdle) drawHurdle(ctx, e.hurdle);
     for (const e of this.enemies) drawEnemy(ctx, e, this.hims.name);
     for (const e of this.enemies) if (e.stare) drawDeathStare(ctx, e, this.gun.origin(view), view);
     this.stage.drawFace(ctx, view);
